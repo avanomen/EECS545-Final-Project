@@ -1,11 +1,12 @@
 import numpy as np
 import pandas as pd
 from math import e
+from IPython.core.debugger import set_trace
 
 class Node:
     
     '''
-    A node object that is recursivly called within itslef to construct a regression tree. Based on Tianqi Chen's XGBoost 
+    A node object that is recursivly called within itself to construct a regression tree. Based on Tianqi Chen's XGBoost 
     the internal gain used to find the optimal split value uses both the gradient and hessian. Also a weighted quantlie sketch 
     and optimal leaf values all follow Chen's description in "XGBoost: A Scalable Tree Boosting System" the only thing not 
     implemented in this version is sparsity aware fitting or the ability to handle NA values with a default direction.
@@ -258,7 +259,8 @@ class XGBoostClassifier:
     
     
     def fit(self, X, y, subsample_cols = 0.8 , min_child_weight = 1, depth = 5, min_leaf = 5, learning_rate = 0.4, boosting_rounds = 5, lambda_ = 1.5, gamma = 1, eps = 0.1):
-        self.X, self.y = X, y.values
+        self.X, self.y = X, y
+        #set_trace()
         self.depth = depth
         self.subsample_cols = subsample_cols
         self.eps = eps
@@ -272,6 +274,7 @@ class XGBoostClassifier:
         self.base_pred = np.full((X.shape[0], 1), 1).flatten().astype('float64')
     
         for booster in range(self.boosting_rounds):
+            print('boosting round {}'.format(booster))
             Grad = self.grad(self.base_pred, self.y)
             Hess = self.hess(self.base_pred, self.y)
             boosting_tree = XGBoostTree().fit(self.X, Grad, Hess, depth = self.depth, min_leaf = self.min_leaf, lambda_ = self.lambda_, gamma = self.gamma, eps = self.eps, min_child_weight = self.min_child_weight, subsample_cols = self.subsample_cols)
@@ -353,8 +356,8 @@ class XGBoostRegressor:
         self.base_pred = np.full((X.shape[0], 1), np.mean(y)).flatten().astype('float64')
     
         for booster in range(self.boosting_rounds):
-            Grad = self.grad(self.base_pred, self.y)
-            Hess = self.hess(self.base_pred, self.y)
+            Grad = self.grad(self, self.base_pred, self.y)
+            Hess = self.hess(self, self.base_pred, self.y)
             boosting_tree = XGBoostTree().fit(self.X, Grad, Hess, depth = self.depth, min_leaf = self.min_leaf, lambda_ = self.lambda_, gamma = self.gamma, eps = self.eps, min_child_weight = self.min_child_weight, subsample_cols = self.subsample_cols)
             self.base_pred += self.learning_rate * boosting_tree.predict(self.X)
             self.estimators.append(boosting_tree)
@@ -365,4 +368,4 @@ class XGBoostRegressor:
         for estimator in self.estimators:
             pred += self.learning_rate * estimator.predict(X) 
           
-        return np.full((X.shape[0], 1), np.mean(y)).flatten().astype('float64') + pred
+        return np.full((X.shape[0], 1), np.mean(self.y)).flatten().astype('float64') + pred
