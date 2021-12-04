@@ -1,117 +1,76 @@
 import numpy as np
+from IPython.core.debugger import set_trace
 
 class Node:
-    def __init__(self, x, samples, hessian, gradient, feature_sel=0.8, gamma=1, reg=1, min_leaf_samples=5, min_child_weight = 1, max_depth=5, depth=0):
+    def __init__(self, x, samples, grad, hess, feature_sel=0.8 , min_num_leaf=5, min_child_weight=1, depth=0, max_depth=10, reg=1, gamma=1):
         self.x = x
-        self.samples = samples
-        self.n_samples = len(samples)
-        self.gamma = gamma
-        self.reg = reg  # lambda
-        self.hessian = hessian
-        self.gradient = gradient
-        self.min_leaf_samples = min_leaf_samples
-        self.min_child_weight = min_child_weight
-        self.max_depth = max_depth
+        self.grad = grad
+        self.hess = hess
+        self.samples = samples 
         self.depth = depth
+        self.min_num_leaf = min_num_leaf
+        self.reg = reg
+        self.gamma  = gamma
+        self.min_child_weight = min_child_weight
         self.feature_sel = feature_sel
+        self.max_depth = max_depth
 
-        self.score = np.NINF
+        self.n_samples = len(samples)
+        self.n_features = self.x.shape[1]
+        self.subsampled_features = np.random.choice(np.arange(self.n_features), int(np.round(self.feature_sel * self.n_features)))
         
-        # randomly selected subsample of columns/features
-        n_features = x.shape[1]
-        self.sampled_features = np.random.choice(n_features, size=int(np.floor(self.feature_sel * n_features)), replace=False)
+        self.val = -np.sum(self.grad[self.samples])/(np.sum(self.hess[self.samples]) + self.reg)
 
-        self.leaf_val = self.get_leaf_val(self.gradient[samples], self.hessian[samples])
-
-        # find best split over all subsampled features
-        self.find_best_split()
-
-    def get_leaf_val(self, gradient, hessian):
+        self.rhs = None
+        self.lhs = None
+          
+        self.score = float('-inf')
+        
+        
+    def compute_gamma(self, gradient, hessian):
         return -np.sum(gradient)/(np.sum(hessian) + self.reg)
-
-
-    def find_best_split(self):
-        for feature in self.sampled_features:
+        
+    def grow_tree(self):
+        for feature in self.subsampled_features:
             self.find_greedy_split(feature)
 
-            # check is node is a leaf
-            if self.depth == self.max_depth or self.score == np.NINF:
-                pass
+        if not self.is_leaf:
+            x = self.x[self.samples , self.split_feature]
+            lhs = np.nonzero(x <= self.split_val)[0]
+            rhs = np.nonzero(x > self.split_val)[0]
 
-            else:
-                # create 2 new nodes at best split already found
-                x_tmp = self.x[self.samples, self.split_feature]
-                lhs = np.nonzero(x_tmp <= self.split_val)[0]
-                rhs = np.nonzero(x_tmp > self.split_val)[0]
+            self.lhs = Node(self.x, self.samples[lhs], self.grad, self.hess, self.feature_sel, self.min_num_leaf, self.min_child_weight, self.depth+1, self.max_depth, self.reg, self.gamma)
+            self.rhs = Node(self.x, self.samples[rhs], self.grad, self.hess, self.feature_sel, self.min_num_leaf, self.min_child_weight, self.depth+1, self.max_depth, self.reg, self.gamma)
 
-                self.lhs = Node(self.x, self.samples[lhs], 
-                                self.hessian, 
-                                self.gradient, 
-                                self.feature_sel, 
-                                self.gamma, 
-                                self.reg, 
-                                self.max_depth, 
-                                self.min_child_weight,
-                                self.max_depth,
-                                self.depth + 1)
+            self.lhs.grow_tree()
+            self.rhs.grow_tree()
 
-                self.rhs = Node(self.x, self.samples[rhs], 
-                                self.hessian, 
-                                self.gradient, 
-                                self.feature_sel, 
-                                self.gamma, 
-                                self.reg, 
-                                self.max_depth, 
-                                self.min_child_weight,
-                                self.max_depth,
-                                self.depth + 1)
+    def find_greedy_split(self, feature):
+        x = self.x[self.samples, feature]
+        
+        for i in range(self.n_samples):
+            lhs = x <= x[i]
+            rhs = x > x[i]
+            
+            lhs_idxs = np.nonzero(x <= x[i])[0]
+            rhs_idxs = np.nonzero(x > x[i])[0]
 
-    def find_greedy_split(self, feature_idx):
-        x_tmp = self.x[self.samples, feature_idx]
+            # check num samples on both sides of split
+            if (rhs.sum() > self.min_num_leaf) and (lhs.sum() > self.min_num_leaf):
 
-        for sample_idx in range(len(self.samples)):
-            lhs_ind = np.nonzero(x_tmp <= x_tmp[sample_idx])[0]
-            rhs_ind = np.nonzero(x_tmp > x_tmp[sample_idx])[0]
+                # check purity score
+                if (self.hess[lhs_idxs].sum() > self.min_child_weight) and (self.hess[rhs_idxs].sum() > self.min_child_weight):
 
-            # check that not less than min samples per leaf
-            if len(lhs_ind) < self.min_leaf_samples or len(rhs_ind) < self.min_leaf_samples:
-                continue
-            # check purity score
-            if self.hessian[lhs_ind].sum() < self.min_child_weight or self.hessian[rhs_ind].sum() < self.min_child_weight:
-                continue
-
-            # find split score
-            score = self.find_gain(lhs_ind, rhs_ind)
-
-            if score > self.score:
-                self.score = score
-                self.split_feature = feature_idx
-                self.split_val = x_tmp[sample_idx]
-
-    def predict(self, x):
-        n_samples = x.shape[0]
-        pred = np.zeros(n_samples)
-        for i in range(n_samples):
-            pred[i] = self.predict_sample(x[i, :])
-        return pred
-
-    def predict_sample(self, sample):
-        # if a leaf return the val
-        if self.score == np.NINF or self.depth == self.max_depth:
-            return self.leaf_val
-
-        # otherwise predict on next nodes
-        else:
-            if sample[self.split_feature] <= self.split_val:
-                next_node = self.lhs
-            else:
-                next_node = self.rhs
-
-            return next_node.predict_sample(sample)
-
-    def find_gain(self, lhs, rhs):
-        gradient = self.gradient[self.samples]
-        hessian  = self.hessian[self.samples]
+                    curr_score = self.get_gain(lhs, rhs)
+                    if curr_score > self.score: 
+                        self.split_feature = feature
+                        self.score = curr_score
+                        self.split_val = x[i] 
+            
+                
+    def get_gain(self, lhs, rhs):
+        gradient = self.grad[self.samples]
+        hessian  = self.hess[self.samples]
         
         gradl = gradient[lhs].sum()
         hessl  = hessian[lhs].sum()
@@ -120,69 +79,91 @@ class Node:
         hessr  = hessian[rhs].sum()
 
         return 0.5 * (gradl**2/(hessl + self.reg) + gradr**2/(hessr + self.reg) - (gradl + gradr)**2/(hessr + hessl + self.reg)) - self.gamma
-   
-
-class XGBtree:
-    def fit(self, x, hessian, gradient, feature_sel=0.8, gamma=1, reg=1, min_leaf_samples=5, min_child_weight=1, max_depth=5):
-        self.dec_tree = Node(x, np.array(np.arange(x.shape[0])), hessian, gradient, feature_sel, gamma, reg, min_leaf_samples, min_child_weight, max_depth, depth=0)
-        return self
+                
+    @property
+    def is_leaf(self):
+        return self.score == float('-inf') or self.depth >= self.max_depth                
 
     def predict(self, x):
-        return self.dec_tree.predict(x)
+        pred = np.zeros(x.shape[0])
+        for sample in range(x.shape[0]):
+            pred[sample] = self.predict_sample(x[sample,:])
 
+        return pred
+    
+    def predict_sample(self, sample):
+        if self.is_leaf:
+            return self.val
 
-class XGBclassifier:
+        if sample[self.split_feature] <= self.split_val:
+            next_node = self.lhs
+        else:
+            next_node = self.rhs
+
+        return next_node.predict_sample(sample)
+
+    
+class XGBoostTree:
+    def fit(self, x, grad, hess, feature_sel, min_num_leaf, min_child_weight, max_depth, reg, gamma):
+        self.tree = Node(x, np.array(np.arange(x.shape[0])), grad, hess, feature_sel, min_num_leaf, min_child_weight, depth=0, max_depth=max_depth, reg=reg, gamma=gamma)
+        self.tree.grow_tree()
+        return self
+    
+    def predict(self, x):
+        return self.tree.predict(x)
+   
+   
+class XGBoostClassifier:
     def __init__(self):
         self.dec_trees = []
-
+    
     @staticmethod
     def sigmoid(x):
         return 1 / (1 + np.exp(-x))
-
-    def grad(self, pred, true):
-        preds = self.sigmoid(pred)
-        return(preds - true)
-
+    
+    # first order gradient logLoss
+    def grad(self, preds, labels):
+        preds = self.sigmoid(preds)
+        return preds - labels
+    
     # second order gradient logLoss
-    def hess(self, pred):
-        preds = self.sigmoid(pred)
-        return(pred * (1 - preds))
-
-    def fit(self, x, y, boosting_rounds=5, lr = 0.3, feature_sel=0.8, gamma=1, reg=1, min_leaf_samples=5, min_child_weight=1, max_depth=5):
-        self.n_samples = x.shape[0]
-        self.n_features = x.shape[1]
-        self.init_pred = np.full((self.n_samples, 1), 0.0).flatten()
-
-        self.x = x
-        self.y = y
-        self.boosting_rounds = boosting_rounds
-        self.lr = lr
-        self.feature_sel = feature_sel
-        self.gamma = gamma
-        self.reg = reg
-        self.min_leaf_samples = min_leaf_samples
-        self.min_child_weight = min_child_weight
+    def hess(self, preds):
+        preds = self.sigmoid(preds)
+        return preds * (1 - preds)
+    
+    @staticmethod
+    def log_odds(column):
+        binary_yes = np.count_nonzero(column == 1)
+        binary_no  = np.count_nonzero(column == 0)
+        return(np.log(binary_yes/binary_no))
+    
+    def fit(self, x, y, boosting_rounds=5, feature_sel=0.8, min_num_leaf=5, min_child_weight=1, max_depth=5, lr=0.4, reg=1.5, gamma=1):
+        self.x, self.y = x, y
+        #set_trace()
         self.max_depth = max_depth
-
-        for boosting_round in range(self.boosting_rounds):
-            print('boosting round {}'.format(boosting_round))
-            gradient = self.grad(self.init_pred, self.y)
-            hessian = self.hess(self.init_pred)
-            tree = XGBtree().fit(x, hessian, gradient, self.feature_sel, self.gamma, self.reg, self.min_leaf_samples, self.min_child_weight, self.max_depth)
-            self.init_pred += self.lr * tree.predict(self.x)
-            self.dec_trees.append(tree)
-
-    def predict(self, x):
-        out = np.zeros(x.shape[0])
-
-        for dec_tree in self.dec_trees:
-            out += self.lr * dec_tree.predict(x)
-
-        pred_prob = self.sigmoid(np.full((x.shape[0], 1), np.mean(self.y)).flatten().astype('float64') + out)
-        return np.where(pred_prob > np.mean(pred_prob), 1, 0)
-
-
-
-
-
-
+        self.feature_sel = feature_sel
+        self.min_child_weight = min_child_weight 
+        self.min_num_leaf = min_num_leaf
+        self.lr = lr
+        self.boosting_rounds = boosting_rounds 
+        self.reg = reg
+        self.gamma  = gamma
+    
+        self.base_pred = np.full((x.shape[0], 1), 1).flatten().astype('float64')
+    
+        for booster in range(self.boosting_rounds):
+            print('boosting round {}'.format(booster))
+            Grad = self.grad(self.base_pred, self.y)
+            Hess = self.hess(self.base_pred)
+            boosting_tree = XGBoostTree().fit(x, grad=Grad, hess=Hess, feature_sel=self.feature_sel, min_num_leaf=self.min_num_leaf, min_child_weight=self.min_child_weight, max_depth=self.max_depth, reg=self.reg, gamma=self.gamma)
+            self.base_pred += self.lr * boosting_tree.predict(self.x)
+            self.dec_trees.append(boosting_tree)
+    
+    def predict(self, X):
+        pred = np.zeros(X.shape[0])
+        for tree in self.dec_trees:
+            pred += self.lr * tree.predict(X) 
+        
+        predicted_probas = self.sigmoid(np.full((X.shape[0], 1), 1).flatten().astype('float64') + pred)
+        preds = np.where(predicted_probas > np.mean(predicted_probas), 1, 0)
+        return preds

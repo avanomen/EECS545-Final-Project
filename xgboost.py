@@ -31,7 +31,7 @@ class Node:
     A single tree object that will be used for gradient boosintg.
     '''
 
-    def __init__(self, x, gradient, hessian, idxs, subsample_cols = 0.8 , min_leaf = 5, min_child_weight = 1 ,depth = 10, lambda_ = 1, gamma = 1, eps = 0.1):
+    def __init__(self, x, gradient, hessian, idxs, subsample_cols = 0.8 , min_leaf = 5, min_child_weight = 1 ,depth = 10, lambda_ = 1, gamma = 1, eps = 0.1, split_imp=None):
       
         self.x, self.gradient, self.hessian = x, gradient, hessian
         self.idxs = idxs 
@@ -47,6 +47,11 @@ class Node:
         self.column_subsample = np.random.permutation(self.col_count)[:round(self.subsample_cols*self.col_count)]
         
         self.val = self.compute_gamma(self.gradient[self.idxs], self.hessian[self.idxs])
+
+        if not split_imp:
+            self.split_imp = {i:0 for i in range(x.values.shape[1])}
+        else:
+            self.split_imp = split_imp
           
         self.score = float('-inf')
         self.find_varsplit()
@@ -62,7 +67,7 @@ class Node:
         '''
         Scans through every column and calcuates the best split point.
         The node is then split at this point and two new nodes are created.
-        Depth is only parameter to change as we have added a new layer to tre structure.
+        Depth is only parameter to change as we have added a new layer    to tre structure.
         If no split is better than the score initalised at the begining then no splits further splits are made
         '''
         for c in self.column_subsample: self.find_greedy_split(c)
