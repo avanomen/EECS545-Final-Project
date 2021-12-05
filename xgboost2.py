@@ -2,6 +2,9 @@ import numpy as np
 from IPython.core.debugger import set_trace
 
 class Node:
+    split_list=[]
+    gain_list=[]
+    cover_list=[]
     def __init__(self, x, samples, grad, hess, feature_sel=0.8 , min_num_leaf=5, min_child_weight=1, depth=0, max_depth=10, reg=1, gamma=1):
         self.x = x
         self.grad = grad
@@ -14,34 +17,28 @@ class Node:
         self.min_child_weight = min_child_weight
         self.feature_sel = feature_sel
         self.max_depth = max_depth
-
         self.n_samples = len(samples)
         self.n_features = self.x.shape[1]
         self.subsampled_features = np.random.choice(np.arange(self.n_features), int(np.round(self.feature_sel * self.n_features)))
-        
         self.val = -np.sum(self.grad[self.samples])/(np.sum(self.hess[self.samples]) + self.reg)
-
         self.rhs = None
         self.lhs = None
-          
         self.score = float('-inf')
-        
-        
     def compute_gamma(self, gradient, hessian):
         return -np.sum(gradient)/(np.sum(hessian) + self.reg)
         
     def grow_tree(self):
         for feature in self.subsampled_features:
             self.find_greedy_split(feature)
-
         if not self.is_leaf:
             x = self.x[self.samples , self.split_feature]
             lhs = np.nonzero(x <= self.split_val)[0]
             rhs = np.nonzero(x > self.split_val)[0]
-
             self.lhs = Node(self.x, self.samples[lhs], self.grad, self.hess, self.feature_sel, self.min_num_leaf, self.min_child_weight, self.depth+1, self.max_depth, self.reg, self.gamma)
             self.rhs = Node(self.x, self.samples[rhs], self.grad, self.hess, self.feature_sel, self.min_num_leaf, self.min_child_weight, self.depth+1, self.max_depth, self.reg, self.gamma)
-
+            Node.split_list.append(self.split_feature) ## feature index each split 
+            Node.gain_list.append(self.get_gain(lhs, rhs)) ## gain each split
+            Node.cover_list.append(len(self.samples)) ## samples in node before each split
             self.lhs.grow_tree()
             self.rhs.grow_tree()
 
@@ -108,7 +105,6 @@ class XGBoostTree:
         self.tree = Node(x, np.array(np.arange(x.shape[0])), grad, hess, feature_sel, min_num_leaf, min_child_weight, depth=0, max_depth=max_depth, reg=reg, gamma=gamma)
         self.tree.grow_tree()
         return self
-    
     def predict(self, x):
         return self.tree.predict(x)
    
@@ -148,14 +144,13 @@ class XGBoostClassifier:
         self.boosting_rounds = boosting_rounds 
         self.reg = reg
         self.gamma  = gamma
-    
         self.base_pred = np.full((x.shape[0], 1), 1).flatten().astype('float64')
-    
         for booster in range(self.boosting_rounds):
             print('boosting round {}'.format(booster))
             Grad = self.grad(self.base_pred, self.y)
             Hess = self.hess(self.base_pred)
             boosting_tree = XGBoostTree().fit(x, grad=Grad, hess=Hess, feature_sel=self.feature_sel, min_num_leaf=self.min_num_leaf, min_child_weight=self.min_child_weight, max_depth=self.max_depth, reg=self.reg, gamma=self.gamma)
+            print('inclassifier',boosting_tree.tree.split_feature)
             self.base_pred += self.lr * boosting_tree.predict(self.x)
             self.dec_trees.append(boosting_tree)
     
@@ -167,3 +162,21 @@ class XGBoostClassifier:
         predicted_probas = self.sigmoid(np.full((X.shape[0], 1), 1).flatten().astype('float64') + pred)
         preds = np.where(predicted_probas > np.mean(predicted_probas), 1, 0)
         return preds
+    def cal_feature_importance(self): 
+        fe_imp_split = dict()
+        fe_imp_gain = dict()
+        fe_imp_cover = dict()
+        for i in range(self.x.shape[1]): 
+          fe_imp_split[i] = 0
+          fe_imp_gain[i] = 0
+          fe_imp_cover[i] = 0
+        for i in range(len(Node.split_list)):
+          index=Node.split_list[i]
+          fe_imp_split[index] = fe_imp_split[index]+1
+          fe_imp_gain[index] = fe_imp_gain[index]+Node.gain_list[index]
+          fe_imp_cover[index] = fe_imp_cover[index]+Node.cover_list[index]
+          # print(index)
+        return fe_imp_split,fe_imp_gain,fe_imp_cover # dict:{key=feature_index,value=feature_importance}
+    def fe_index(self,mode):   # 0: split 1: gain 2: cover
+        dict_fe=self.cal_feature_importance()
+        return np.flip(np.argsort(list(dict_fe[mode].values()))) # index with ascending order sorted by feature importance
