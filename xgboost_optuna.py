@@ -14,6 +14,14 @@ print(X_train.shape)
 print(y_train.values.shape)
 print(y_train.columns)
 
+train_num = 5000
+
+X_train = X_train.values[:3000,:]
+y_train = y_train['income'].values[:3000]
+
+print(X_train.shape)
+print(y_train.shape)
+
 def objective(trial):
     reg = trial.suggest_float("reg", 1e-2, 1.0)
     gamma = trial.suggest_float("gamma", 1e-2, 3.0)
@@ -26,7 +34,7 @@ def objective(trial):
 
     # train the model with the given parameters
     model = xgboost2.XGBoostClassifier()
-    model.fit(X_train.values, y_train['income'].values,
+    model.fit(X_train, y_train,
               boosting_rounds=boosting_rounds, 
               feature_sel=feature_sel, 
               min_num_leaf=min_leaf_num, 
@@ -43,7 +51,7 @@ def objective(trial):
 
 if __name__ == "__main__":
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=30)
+    study.optimize(objective, n_trials=50)
 
     print("Number of finished trials: ", len(study.trials))
     print("Best trial:")
@@ -55,7 +63,7 @@ if __name__ == "__main__":
         print("    {}: {}".format(key, value))
 
     # save study object
-    with open('adult_study.pkl', 'rb') as out_file:
+    with open('adult_study.pkl', 'wb') as out_file:
         pkl.dump(study, out_file, pkl.HIGHEST_PROTOCOL)
 
 
