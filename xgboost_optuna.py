@@ -25,12 +25,12 @@ print(y_train.shape)
 def objective(trial):
     reg = trial.suggest_float("reg", 1e-2, 1.0)
     gamma = trial.suggest_float("gamma", 1e-2, 3.0)
-    feature_sel = trial.suggest_float("feature_sel", 0.2, 1.0)
+    feature_sel = trial.suggest_float("feature_sel", 0.6, 1.0)
     max_depth = trial.suggest_int("max_depth", 2, 20)
     min_child_weight = trial.suggest_float("min_child_weight", 1, 5)
-    lr = trial.suggest_float("lr", 1e-2, 1.0, log=True)
+    lr = trial.suggest_float("lr", 1e-3, 2.0, log=True)
     min_leaf_num = trial.suggest_int("min_leaf_num", 3, 20)
-    boosting_rounds = trial.suggest_int("boosting_rounds", 2, 10, step=2)
+    boosting_rounds = trial.suggest_int("boosting_rounds", 2, 16, step=2)
 
     # train the model with the given parameters
     model = xgboost2.XGBoostClassifier()
@@ -51,7 +51,7 @@ def objective(trial):
 
 if __name__ == "__main__":
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=50)
+    study.optimize(objective, n_trials=100)
 
     print("Number of finished trials: ", len(study.trials))
     print("Best trial:")
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         print("    {}: {}".format(key, value))
 
     # save study object
-    with open('adult_study.pkl', 'wb') as out_file:
+    with open('adult_study2.pkl', 'wb') as out_file:
         pkl.dump(study, out_file, pkl.HIGHEST_PROTOCOL)
 
 
