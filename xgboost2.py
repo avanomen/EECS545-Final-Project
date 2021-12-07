@@ -143,14 +143,14 @@ class XGBoostClassifier:
         self.lr = lr
         self.boosting_rounds = boosting_rounds 
         self.reg = reg
-        self.gamma  = gamma
+        self.gamma = gamma
         self.base_pred = np.full((x.shape[0], 1), 1).flatten().astype('float64')
         for booster in range(self.boosting_rounds):
             print('boosting round {}'.format(booster))
             Grad = self.grad(self.base_pred, self.y)
             Hess = self.hess(self.base_pred)
             boosting_tree = XGBoostTree().fit(x, grad=Grad, hess=Hess, feature_sel=self.feature_sel, min_num_leaf=self.min_num_leaf, min_child_weight=self.min_child_weight, max_depth=self.max_depth, reg=self.reg, gamma=self.gamma)
-            print('inclassifier',boosting_tree.tree.split_feature)
+            #print('inclassifier',boosting_tree.tree.split_feature)
             self.base_pred += self.lr * boosting_tree.predict(self.x)
             self.dec_trees.append(boosting_tree)
     
