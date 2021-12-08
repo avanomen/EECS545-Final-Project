@@ -10,6 +10,9 @@ X_test = pd.read_csv('./data/X_test_adult.csv')
 y_train = pd.read_csv('./data/y_train_adult.csv')
 y_test = pd.read_csv('./data/y_test_adult.csv')
 
+X_train = X_train.drop(['Unnamed: 0'], axis=1)
+X_test = X_test.drop(['Unnamed: 0'], axis=1)
+
 print(X_train.shape)
 print(y_train.values.shape)
 print(y_train.columns)
@@ -63,7 +66,7 @@ if __name__ == "__main__":
         print("    {}: {}".format(key, value))
 
     # save study object
-    with open('adult_study2.pkl', 'wb') as out_file:
+    with open('adult_study3.pkl', 'wb') as out_file:
         pkl.dump(study, out_file, pkl.HIGHEST_PROTOCOL)
 
 
