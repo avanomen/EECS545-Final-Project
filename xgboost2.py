@@ -1,5 +1,6 @@
 import numpy as np
 from IPython.core.debugger import set_trace
+import matplotlib.pyplot as plt
 
 class Node:
     split_list=[]
@@ -153,7 +154,10 @@ class XGBoostClassifier:
             #print('inclassifier',boosting_tree.tree.split_feature)
             self.base_pred += self.lr * boosting_tree.predict(self.x)
             self.dec_trees.append(boosting_tree)
-    
+        # save fi dicts
+    def save_fi(self):
+        self.split_fi, self.gain_fi, self.cover_fi = self.cal_feature_importance()
+        self.fe_index_array = [self.fe_index(i) for i in range(3)]
     def predict(self, X):
         pred = np.zeros(X.shape[0])
         for tree in self.dec_trees:
@@ -162,21 +166,40 @@ class XGBoostClassifier:
         predicted_probas = self.sigmoid(np.full((X.shape[0], 1), 1).flatten().astype('float64') + pred)
         preds = np.where(predicted_probas > np.mean(predicted_probas), 1, 0)
         return preds
+
     def cal_feature_importance(self): 
         fe_imp_split = dict()
         fe_imp_gain = dict()
         fe_imp_cover = dict()
+        func_shift=lambda x: x-min(x) # shift func for gain value
+        Node.gain_list=list(func_shift(Node.gain_list))
         for i in range(self.x.shape[1]): 
           fe_imp_split[i] = 0
           fe_imp_gain[i] = 0
-          fe_imp_cover[i] = 0
+          fe_imp_cover[i] = 0  
         for i in range(len(Node.split_list)):
           index=Node.split_list[i]
-          fe_imp_split[index] = fe_imp_split[index]+1
-          fe_imp_gain[index] = fe_imp_gain[index]+Node.gain_list[index]
-          fe_imp_cover[index] = fe_imp_cover[index]+Node.cover_list[index]
+          fe_imp_split[index] = fe_imp_split[index] + 1
+          fe_imp_gain[index] = fe_imp_gain[index] + Node.gain_list[i]
+          fe_imp_cover[index] = fe_imp_cover[index] + Node.cover_list[i]
           # print(index)
         return fe_imp_split,fe_imp_gain,fe_imp_cover # dict:{key=feature_index,value=feature_importance}
     def fe_index(self,mode):   # 0: split 1: gain 2: cover
-        dict_fe=self.cal_feature_importance()
+        dict_fe = self.cal_feature_importance()
         return np.flip(np.argsort(list(dict_fe[mode].values()))) # index with ascending order sorted by feature importance
+    def fe_imp_plot(self,mode,name_list): # name_list: array of feature names
+        plt.figure(figsize=(15,10),dpi=400)
+        fontsize={'fontsize':20}
+        title_list=['Split','Gain','Cover']
+        title=title_list[mode]
+        title=f'Feature Importance ({title})'
+        plt.xlabel('feature importance',fontdict=fontsize)
+        plt.title(title,fontdict=fontsize)
+        plt.xticks(fontsize=15)
+        plt.yticks(fontsize=15)
+        imp_dict=self.cal_feature_importance()
+        ind=np.argsort(list(imp_dict[mode].values()))
+        plt.barh(np.array(name_list[ind]), np.array(list(imp_dict[mode].values()))[ind])
+        plt.savefig(f'_{title}',dpi=400)
+        return
+        
