@@ -10,7 +10,7 @@ class Node:
         self.x = x
         self.grad = grad
         self.hess = hess
-        self.samples = samples 
+        self.samples = samples
         self.depth = depth
         self.min_num_leaf = min_num_leaf
         self.reg = reg
@@ -27,7 +27,7 @@ class Node:
         self.score = float('-inf')
     def compute_gamma(self, gradient, hessian):
         return -np.sum(gradient)/(np.sum(hessian) + self.reg)
-        
+
     def grow_tree(self):
         for feature in self.subsampled_features:
             self.find_greedy_split(feature)
@@ -37,7 +37,7 @@ class Node:
             rhs = np.nonzero(x > self.split_val)[0]
             self.lhs = Node(self.x, self.samples[lhs], self.grad, self.hess, self.feature_sel, self.min_num_leaf, self.min_child_weight, self.depth+1, self.max_depth, self.reg, self.gamma)
             self.rhs = Node(self.x, self.samples[rhs], self.grad, self.hess, self.feature_sel, self.min_num_leaf, self.min_child_weight, self.depth+1, self.max_depth, self.reg, self.gamma)
-            Node.split_list.append(self.split_feature) ## feature index each split 
+            Node.split_list.append(self.split_feature) ## feature index each split
             Node.gain_list.append(self.get_gain(lhs, rhs)) ## gain each split
             Node.cover_list.append(len(self.samples)) ## samples in node before each split
             self.lhs.grow_tree()
@@ -45,11 +45,11 @@ class Node:
 
     def find_greedy_split(self, feature):
         x = self.x[self.samples, feature]
-        
+
         for i in range(self.n_samples):
             lhs = x <= x[i]
             rhs = x > x[i]
-            
+
             lhs_idxs = np.nonzero(x <= x[i])[0]
             rhs_idxs = np.nonzero(x > x[i])[0]
 
@@ -60,27 +60,27 @@ class Node:
                 if (self.hess[lhs_idxs].sum() > self.min_child_weight) and (self.hess[rhs_idxs].sum() > self.min_child_weight):
 
                     curr_score = self.get_gain(lhs, rhs)
-                    if curr_score > self.score: 
+                    if curr_score > self.score:
                         self.split_feature = feature
                         self.score = curr_score
-                        self.split_val = x[i] 
-            
-                
+                        self.split_val = x[i]
+
+
     def get_gain(self, lhs, rhs):
         gradient = self.grad[self.samples]
         hessian  = self.hess[self.samples]
-        
+
         gradl = gradient[lhs].sum()
         hessl  = hessian[lhs].sum()
-        
+
         gradr = gradient[rhs].sum()
         hessr  = hessian[rhs].sum()
 
         return 0.5 * (gradl**2/(hessl + self.reg) + gradr**2/(hessr + self.reg) - (gradl + gradr)**2/(hessr + hessl + self.reg)) - self.gamma
-                
+
     @property
     def is_leaf(self):
-        return self.score == float('-inf') or self.depth >= self.max_depth                
+        return self.score == float('-inf') or self.depth >= self.max_depth
 
     def predict(self, x):
         pred = np.zeros(x.shape[0])
@@ -88,7 +88,7 @@ class Node:
             pred[sample] = self.predict_sample(x[sample,:])
 
         return pred
-    
+
     def predict_sample(self, sample):
         if self.is_leaf:
             return self.val
@@ -100,7 +100,7 @@ class Node:
 
         return next_node.predict_sample(sample)
 
-    
+
 class XGBoostTree:
     def fit(self, x, grad, hess, feature_sel, min_num_leaf, min_child_weight, max_depth, reg, gamma):
         self.tree = Node(x, np.array(np.arange(x.shape[0])), grad, hess, feature_sel, min_num_leaf, min_child_weight, depth=0, max_depth=max_depth, reg=reg, gamma=gamma)
@@ -108,41 +108,41 @@ class XGBoostTree:
         return self
     def predict(self, x):
         return self.tree.predict(x)
-   
-   
+
+
 class XGBoostClassifier:
     def __init__(self):
         self.dec_trees = []
-    
+
     @staticmethod
     def sigmoid(x):
         return 1 / (1 + np.exp(-x))
-    
+
     # first order gradient logLoss
     def grad(self, preds, labels):
         preds = self.sigmoid(preds)
         return preds - labels
-    
+
     # second order gradient logLoss
     def hess(self, preds):
         preds = self.sigmoid(preds)
         return preds * (1 - preds)
-    
+
     @staticmethod
     def log_odds(column):
         binary_yes = np.count_nonzero(column == 1)
         binary_no  = np.count_nonzero(column == 0)
         return(np.log(binary_yes/binary_no))
-    
+
     def fit(self, x, y, boosting_rounds=5, feature_sel=0.8, min_num_leaf=5, min_child_weight=1, max_depth=5, lr=0.4, reg=1.5, gamma=1):
         self.x, self.y = x, y
         #set_trace()
         self.max_depth = max_depth
         self.feature_sel = feature_sel
-        self.min_child_weight = min_child_weight 
+        self.min_child_weight = min_child_weight
         self.min_num_leaf = min_num_leaf
         self.lr = lr
-        self.boosting_rounds = boosting_rounds 
+        self.boosting_rounds = boosting_rounds
         self.reg = reg
         self.gamma = gamma
         self.base_pred = np.full((x.shape[0], 1), 1).flatten().astype('float64')
@@ -161,22 +161,22 @@ class XGBoostClassifier:
     def predict(self, X):
         pred = np.zeros(X.shape[0])
         for tree in self.dec_trees:
-            pred += self.lr * tree.predict(X) 
-        
+            pred += self.lr * tree.predict(X)
+
         predicted_probas = self.sigmoid(np.full((X.shape[0], 1), 1).flatten().astype('float64') + pred)
         preds = np.where(predicted_probas > np.mean(predicted_probas), 1, 0)
         return preds
 
-    def cal_feature_importance(self): 
+    def cal_feature_importance(self):
         fe_imp_split = dict()
         fe_imp_gain = dict()
         fe_imp_cover = dict()
         func_shift=lambda x: x-min(x) # shift func for gain value
         Node.gain_list=list(func_shift(Node.gain_list))
-        for i in range(self.x.shape[1]): 
+        for i in range(self.x.shape[1]):
           fe_imp_split[i] = 0
           fe_imp_gain[i] = 0
-          fe_imp_cover[i] = 0  
+          fe_imp_cover[i] = 0
         for i in range(len(Node.split_list)):
           index=Node.split_list[i]
           fe_imp_split[index] = fe_imp_split[index] + 1
@@ -202,4 +202,3 @@ class XGBoostClassifier:
         plt.barh(np.array(name_list[ind]), np.array(list(imp_dict[mode].values()))[ind])
         plt.savefig(f'_{title}',dpi=400)
         return
-        
